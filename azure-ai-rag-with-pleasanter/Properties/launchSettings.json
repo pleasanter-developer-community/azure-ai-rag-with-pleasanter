@@ -1,16 +1,16 @@
-{
+﻿{
   "profiles": {
     "WSL": {
       "commandName": "WSL2",
       "environmentVariables": {
-        "DOTNET_ENVIRONMENT": "Development"
+        "DOTNET_ENVIRONMENT": "development"
       },
       "distributionName": ""
     },
     "RAGWithPleasanter": {
       "commandName": "Project",
       "environmentVariables": {
-        "DOTNET_ENVIRONMENT": "Development"
+        "DOTNET_ENVIRONMENT": "development"
       }
     }
   }
