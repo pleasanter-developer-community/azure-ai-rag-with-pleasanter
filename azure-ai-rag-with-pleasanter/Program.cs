@@ -64,7 +64,7 @@ static class Program
     /// <returns>The initialized kernel.</returns>
     private static Kernel InitializeSemanticKernel(AppSettings settings, AzureOpenAIClient openAiClient)
     {
-#pragma warning disable SKEXP0001, SKEXP0010
+#pragma warning disable SKEXP0001, SKEXP0010 // 種類は、評価の目的でのみ提供されています。将来の更新で変更または削除されることがあります。続行するには、この診断を非表示にします。
 
         var kernelBuilder = Kernel.CreateBuilder()
                     .AddAzureOpenAIChatCompletion(settings.ChatDeployment, openAiClient);
