@@ -1,4 +1,7 @@
-﻿# Azure OpenAI と Azure AI Search でRAGを構築する
+﻿> [!WARNING]
+> このREADME.ｍｄは書きかけです。
+
+# Azure OpenAI と Azure AI Search でRAGを構築する
 
 ## 1. はじめに
 
@@ -31,8 +34,6 @@
 - プリザンターはAzure AppService及びAzure SQL Databaseを利用したサーバーレス構成でインストールされているものとします。
   - 参考: [インストーラでプリザンターをAzure AppServiceにサーバレス構成でインストールする](https://pleasanter.org/ja/manual/getting-started-installer-pleasanter-azure)
 
-> [!Note]
-> プリザンターはオープンソースのWebアプリケーションで、無償で制限なく利用可能です。ASP.NET Coreで実装されており、Azure サービスとの親和性も高いと思います。
 
 ## 2. 取りこむデータの準備
 ### サンプルデータ
@@ -45,7 +46,7 @@
 プリザンターの特定のテーブルからデータを取得するためのViewを作成します。
 以下のSQLを使って、dbo.Resultsテーブルから必要なデータを取得し、各カラムに適切な名前を付けたViewを作成します。
 
-今回は、「SiteId」で絞ることでプリザンターに登録されている全データから今回のサンプルデータのみをインデックス化する用にしています。
+今回は、「SiteId」で絞ることでプリザンターに登録されている全データから今回のサンプルデータのみをインデックス化するようにしています。
 
 ```sql
 CREATE VIEW dbo.ramen
