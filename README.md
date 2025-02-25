@@ -1,5 +1,5 @@
 ﻿> [!WARNING]
-> このREADME.ｍｄは書きかけです。
+> このREADME.mdは書きかけです。
 
 # Azure OpenAI と Azure AI Search でRAGを構築する
 
