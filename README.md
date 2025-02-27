@@ -134,16 +134,23 @@ WHERE           (SiteId = 2)
 下記ドキュメントを参考にサンプルデータのインポートとベクター化を行います。
 
 - [マネージド ID を使用して Azure SQL へのインデクサー接続を設定する : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-howto-managed-identities-sql)
-
 - [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer)
 
 ### SQL Databaseへのロール割り当て
-AI Searchのインスタンスに、データソースとなるSQL Databaseへの読み取り権限を付与します。
+[マネージド ID を使用して Azure SQL へのインデクサー接続を設定する:Microsoft Learn](https://github.com/pleasanter-developer-community/azure-ai-rag-with-pleasanter)を参考にして、AI Searchのインスタンスに、データソースとなるSQL Databaseへの読み取り権限を付与します。
+
 - Azure PortalでSQL Databaseサーバーのリソースに移動し、左側のメニューで"アクセス制御(IAM)"を選びます
 - 「ロールの割り当ての追加」ボタンをクリック
 - ロールに「閲覧者」を選択
 - アクセスの割当先に「マネージドID」を選択
 - メンバーの追加でAI Search（ramen-search）のマネージドIDを選択
+
+また、Visual Studioや SQLServer Management Studio 等のツールでSQL Databaseに接続し、下記SQLでAI SearchのマネージドIDに対してデータベースへのアクセス権限を付与します。
+
+```sql
+CREATE USER [ramen-search] FROM EXTERNAL PROVIDER;
+EXEC sp_addrolemember 'db_datareader', [ramen-search];
+```
 
 ### データのインポートとベクター化
 
@@ -151,41 +158,62 @@ AI Searchのインスタンスに、データソースとなるSQL Databaseへ�
   
 ![alt text](/img/image-3.png) 
 
-- データへの接続の設定を行います。
+- データへの接続
   - Azure SQLアカウントの種類：SQLデータベース
   - サーバー：(プリザンターのDBサーバー)
   - データベース: (プリザンターのDB名)
   - テーブルまたはビュー: 表示(View)
-  - 認証オプションを選択する: マネージドIDを使用して認証する 
+  - 認証オプションを選択する: マネージドIDを使用して認証する（システム割り当て）
   - ビューの名前: ramen
+  - 変更の追跡: ☑　
+    - 高ウォーターマーク変更ポリシー
+    - 高基準値列：UpdatedTime
 
-![alt text](/img/image-4.png)
+![alt text](image.png)
 
+> [!Warning]
+> #### 変更の追跡と高ウォーターマークポリシーの高基準値列について
+> [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer) には下記のような記載があります。
+> 
+> 高ウォーターマーク変更検出ポリシーは、行が最後に更新されたときのバージョンまたは時刻を取得する、テーブルまたはビューの "高基準" 列に依存します。 
+> ビューを使う場合は、高ウォーターマークポリシーを使用する必要があります。 
+>
+> 今回はビューを利用するため、高ウォーターマーク変更ポリシーのみが利用可能となります。高基準値列にはUpdatedTimeを指定しましたが、rowversion列を指定することを強く推奨するとの事です。
+
+- テキストをベクトル化する
+  - ベクトル化する列: CombindField
+  - Kind: Azure OpenAI
+  - サブスクリプション: (Azure OpenAIを作成したサブスクリプション)
+  - Azure OpenAI Service: (作成したAzure OpenAI名)
+  - モデルデプロイ: (ベクトル化に使用するLLMモデルのデプロイ名（今回は text-embedding-ada-002）)
+  
+![alt text](/img/image-5.png)
+
+- インデックス作成のスケジュール
+  - スケジュール: インデックスを更新する頻度を選択します。（今回は動作検証に利用するだけなので「一度だけ」としておきます）
+
+![alt text](/img/image-6.png)
+
+- オブジェクト名のプレフィックスを任意の名前に変更してインポートを実行します。この名前はこの後「インデックス名」として利用します。
+
+![alt text](/img/image-7.png)
+
+インポートが完了すると、Azure AI Searchのリソースにインデックス作成されます。
+![alt text](/img/image-8.png)
 
 
 ## 5. セマンティックカーネルによるベクターストアを使用したテキスト検索の実装
 ここからはAIサービスを利用したクライアント側の実装例を見ていきます。
 サンプルでは下記のドキュメントを参考にセマンティックカーネルによるテキスト検索（RAG）の実装を行っています。
 
+> [!WARNING]
+> セマンティック カーネル テキスト検索機能はプレビュー段階であり、破壊的変更を必要とする機能強化は、リリース前の限られた状況で引き続き発生する可能性があります。
+
 - [セマンティック カーネル テキスト検索とは](https://learn.microsoft.com/ja-jp/semantic-kernel/concepts/text-search/?pivots=programming-language-csharp)
 - [セマンティック カーネル テキスト検索でベクター ストアを使用する方法](https://learn.microsoft.com/ja-jp/semantic-kernel/concepts/text-search/text-search-vector-stores?pivots=programming-language-csharp)
 
-### アプリケーション設定
-
-プロジェクトフォルダ(azure-ai-rag-with-pleasanter)配下に `appsettings.development.json` ファイルを作成し、Azureサービスの各種設定を記入してください。
- 
-```json
-{
-  "AzureOpenAIEndpoint": "{Your OpenAI Endpoint}",
-  "AzureOpenAIKey": "{Your OpenAI Key}",
-  "AzureSearchEndpoint": "{Your AI Search Endpoint}",
-  "AzureSearchKey": "{Your Azure Search Key}",
-  "ChatDeployment": "gpt-4o-mini",
-  "VectorStoreName": "{Your Vector Store Name}",
-  "EmbeddingDeployment": "text-embedding-ada-002"
-}
-```
-### Nuget Packages
+### 依存ライブラリ
+サンプルでは、下記のライブラリを参照しています。
 
 |Package|説明|
 |-|-|
@@ -194,11 +222,76 @@ AI Searchのインスタンスに、データソースとなるSQL Databaseへ�
 |Microsoft.SemanticKernel|セマンティックカーネルのライブラリ本体|
 |Microsoft.SemanticKernel.Connectors.AzureOpenAI|Azure OpenAI用コネクタ|
 |Microsoft.SemanticKernel.PromptTemplates.Handlebars|PromptTemplateの生成|
-|Microsoft.SemanticKernel.Connectors.AzureAISearch|Azure AI Search用コネクタ（プレビューで検証用のため実装が大きく変わる可能性あり）|
+|Microsoft.SemanticKernel.Connectors.AzureAISearch|Azure AI Search用コネクタ（こちらはブレビュー版につき実装が大きく変わる可能性があります。）|
 
-### 解説
+### アプリケーション設定
+サンプルを実行するには、アプリケーション設定ファイルが必要です。プロジェクトフォルダ(azure-ai-rag-with-pleasanter)配下に `appsettings.development.json` ファイルを作成し、Azureサービスの各種設定を記入してください。
+ 
+```json
+{
+  "AzureOpenAIEndpoint": "{Azure OpenAI のエンドポイント}",
+  "AzureOpenAIKey": "{Azure OpenAIのキー}",
+  "AzureSearchEndpoint": "{Azure AI Searchのエンドポイント}",
+  "AzureSearchKey": "{Azure AI Searchのキー}",
+  "ChatDeployment": "gpt-4o-mini",
+  "VectorStoreIndexName": "{AI Searchのインデックス名}",
+  "EmbeddingDeployment": "text-embedding-ada-002",
+  "ServiceUrl": "{検索結果のLink生成に使う、プリザンターのURL}"
+}
+```
 
-1. Azure OpenAI Clientの作成
+### コードの解説
+
+1. ベクターストアモデルの定義
+
+```csharp
+public class Ramen
+{
+    [VectorStoreRecordVector]
+    public ReadOnlyMemory<float> text_vector { get; init; }
+        
+    [VectorStoreRecordKey]
+    public required string ID { get; init; }
+
+    [VectorStoreRecordData]
+    public required string StoreName { get; init; }
+
+    [VectorStoreRecordData]
+    public required string Reviews { get; init; }
+
+    [VectorStoreRecordData]
+    public required string Location { get; init; }
+
+    [VectorStoreRecordData]
+    public required string Style { get; init; }
+
+    [VectorStoreRecordData]
+    public required string RecommendedMenu { get; init; }
+
+    [VectorStoreRecordData]
+    public required string Keyword { get; init; }
+}
+```
+
+2. テキスト検索結果のマッピングを定義
+
+```csharp
+sealed class RamenTextSearchResultMapper : ITextSearchResultMapper
+
+{
+    public TextSearchResult MapFromResultToTextSearchResult(object result)
+    {
+        if (result is Ramen ramen)
+        {
+            var valueText = $"{{Style:\"{ramen.Style}\",Reviews:\"{ramen.Reviews}\",RecommendedMenu:\"{ramen.RecommendedMenu}\",Keyword:\"{ramen.Keyword}\"}}";
+            return new TextSearchResult(value: valueText) { Name = ramen.StoreName, Link = $"{ServiceUrl}/items/{ramen.ID}" };
+        }
+        throw new ArgumentException("Invalid result type.");
+    }
+}
+```
+
+2. Azure OpenAI Clientの作成
 
 ```csharp
 var openAiClient = new AzureOpenAIClient(
@@ -206,7 +299,7 @@ var openAiClient = new AzureOpenAIClient(
     new AzureKeyCredential(settings.AzureOpenAIKey));
 ```
 
-2. Semantic Kernelの構築
+3. Semantic Kernelの構築
 
 ```csharp
 private static Kernel InitializeSemanticKernel(AppSettings settings, AzureOpenAIClient openAiClient)
@@ -224,13 +317,13 @@ private static Kernel InitializeSemanticKernel(AppSettings settings, AzureOpenAI
             new Uri(settings.AzureSearchEndpoint),
             new AzureKeyCredential(settings.AzureSearchKey)));
 
-    //ベクトルストアからレコードのコレクションを取得
+    //ベクトルストアからコレクションを取得
     var collection = vectorStore.GetCollection<string, Ramen>(settings.VectorStoreName);
 
     //テキスト埋め込み生成サービスの作成
     var embeddingGenarationService = new AzureOpenAITextEmbeddingGenerationService(settings.EmbeddingDeployment, openAiClient);
 
-    //
+    //VectorStoreTextSearch オブジェクトの生成
     var textSearch = new VectorStoreTextSearch<Ramen>(
         collection,
         embeddingGenarationService,

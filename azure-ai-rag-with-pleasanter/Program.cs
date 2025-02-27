@@ -67,7 +67,7 @@ static class Program
 #pragma warning disable SKEXP0001, SKEXP0010 // 種類は、評価の目的でのみ提供されています。将来の更新で変更または削除されることがあります。続行するには、この診断を非表示にします。
 
         var kernelBuilder = Kernel.CreateBuilder()
-                    .AddAzureOpenAIChatCompletion(settings.ChatDeployment, openAiClient);
+            .AddAzureOpenAIChatCompletion(settings.ChatDeployment, openAiClient);
         var kernel = kernelBuilder.Build();
 
         var vectorStore = new AzureAISearchVectorStore(
@@ -75,13 +75,13 @@ static class Program
                 new Uri(settings.AzureSearchEndpoint),
                 new AzureKeyCredential(settings.AzureSearchKey)));
 
-        var collection = vectorStore.GetCollection<string, Ramen>(settings.VectorStoreName);
+        var collection = vectorStore.GetCollection<string, Ramen>(settings.VectorStoreIndexName);
         var embeddingGenarationService = new AzureOpenAITextEmbeddingGenerationService(settings.EmbeddingDeployment, openAiClient);
         var textSearch = new VectorStoreTextSearch<Ramen>(
             collection,
             embeddingGenarationService,
             null,
-            new RamenTextSearchResultMapper());
+            new RamenTextSearchResultMapper(settings.ServiceUrl));
 
         var searchPlugin = KernelPluginFactory.CreateFromFunctions(
             "SearchPlugin", "ramen search",
