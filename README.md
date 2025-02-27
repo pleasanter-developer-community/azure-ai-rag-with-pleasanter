@@ -169,8 +169,6 @@ EXEC sp_addrolemember 'db_datareader', [ramen-search];
     - 高ウォーターマーク変更ポリシー
     - 高基準値列：UpdatedTime
 
-![alt text](image.png)
-
 > [!Warning]
 > #### 変更の追跡と高ウォーターマークポリシーの高基準値列について
 > [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer) には下記のような記載があります。
