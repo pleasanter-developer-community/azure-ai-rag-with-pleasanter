@@ -1,4 +1,4 @@
-﻿# Azure AI Searchのベクターストアを利用したRAGパターンをSemantic Kernelで実装する
+﻿# Semantic KernelとAzure AI Searchのベクターストアを利用したRAGパターンの構築
 
 ## 1. はじめに
 
