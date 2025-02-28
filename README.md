@@ -1,4 +1,4 @@
-﻿# # Azure OpenAIとAzure AI Searchを利用したSemantic Kernelテキスト検索(RAGパターン)の実装
+﻿# Azure OpenAIとAzure AI Searchを利用したSemantic Kernelテキスト検索(RAGパターン)の実装
 
 ## 1. はじめに
 
