@@ -1,7 +1,4 @@
-﻿> [!WARNING]
-> このREADME.mdは書きかけです。
-
-# Azure OpenAI と Azure AI Search でRAGを構築する
+﻿# Azure AI Searchのベクターストアを利用したRAGパターンをSemantic Kernelで実装する
 
 ## 1. はじめに
 
@@ -169,6 +166,8 @@ EXEC sp_addrolemember 'db_datareader', [ramen-search];
     - 高ウォーターマーク変更ポリシー
     - 高基準値列：UpdatedTime
 
+![alt text](/img/image-4.png)
+
 > [!Warning]
 > #### 変更の追跡と高ウォーターマークポリシーの高基準値列について
 > [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer) には下記のような記載があります。
@@ -191,6 +190,12 @@ EXEC sp_addrolemember 'db_datareader', [ramen-search];
   - スケジュール: インデックスを更新する頻度を選択します。（今回は動作検証に利用するだけなので「一度だけ」としておきます）
 
 ![alt text](/img/image-6.png)
+
+- インデックスフィールド「プレビューと編集」をクリックして取り込み元のビューのカラムとインデックスフィールドとの対応を確認します。
+  - ベクトル化する列に指定したCombindFieldはベクトル変換後、 text_vector というフィールド名で登録されるようです。
+  - それ以外のカラムはそのまま同じ名前のインデックスフィールドに格納する設定となっています。
+
+![alt text](/img/image-9.png)
 
 - オブジェクト名のプレフィックスを任意の名前に変更してインポートを実行します。この名前はこの後「インデックス名」として利用します。
 
@@ -240,7 +245,12 @@ EXEC sp_addrolemember 'db_datareader', [ramen-search];
 
 ### コードの解説
 
-1. ベクターストアモデルの定義
+#### ベクターストアモデルの定義
+まず、下準備としてAI Searchのベクターストアに登録されているデータをC#で扱うためのモデルクラスを定義します。
+各プロパティにはデータマッピング用の属性を付与します。
+- VectorStoreRecordVectorAttribute: ベクトル列に付与
+- VectorStoreRecordKeyAttribute: このモデルのキーとなる項目に付与
+- VectorStoreRecordDataAttribute: その他、取得したいフィールドに付与
 
 ```csharp
 public class Ramen
@@ -271,8 +281,18 @@ public class Ramen
 }
 ```
 
-2. テキスト検索結果のマッピングを定義
+#### テキスト検索結果のマッピングの定義
+次に、ベクトルストアモデル(Ramenクラス)をTextSearchResultの形式に変換するためのMapperクラスを定義します。
+TextSearchResultは下記のプロパティを持ちます
+- Name: 取得したデータの名前
+- Value: 取得したデータの内容／詳細情報
+- Link: ソースとなるデータが格納されている場所(WebサイトのURLなど)
 
+今回のサンプルでは、下記の様に値を変換しています。
+- Name: StoreName（店名）
+- Value: ID、StoreName以外のフィールドをJSON文字列に成型した文字列
+- Link: IDを基に組み立てた、プリザンターのレコードのURL
+- 
 ```csharp
 sealed class RamenTextSearchResultMapper : ITextSearchResultMapper
 
@@ -289,52 +309,165 @@ sealed class RamenTextSearchResultMapper : ITextSearchResultMapper
 }
 ```
 
-2. Azure OpenAI Clientの作成
+#### メイン処理
+プログラムの流れとしては以下の様になります
+1. テキスト検索用にカスタマイズしたSemantic Kernelの構築
+2. 検索結果を基にプロンプトの文字列を生成するためのテンプレートを定義
+3. `kernel.InvokePromptAsync`でプロンプトを実行
 
 ```csharp
-var openAiClient = new AzureOpenAIClient(
-    new Uri(settings.AzureOpenAIEndpoint),
-    new AzureKeyCredential(settings.AzureOpenAIKey));
+static async Task Main()
+{
+    //アプリケーション設定の取得
+    var settings = GetAppSettings();
+
+　　//テキスト検索用にカスタマイズしたSemantic Kernelの構築
+    var kernel = CreateTextSearchKernel(settings);
+
+    //プロンプトテンプレート構築用のファクトリクラス
+    //- ここではHandlebarsテンプレートエンジンを利用
+    var promptTemplateFactory = new HandlebarsPromptTemplateFactory();
+    //検索結果からプロンプトを生成するテンプレートの定義
+    //- <Plugin名>-<Function名> でカーネルプラグインのファンクションを呼び出し
+    //- 結果を {{#each this}} で反復処理
+    var promptTemplate = """
+        {{#with (SearchPlugin-GetTextSearchResults query)}}  
+            {{#each this}}  
+            Name: {{Name}}
+            Value: {{Value}}
+            Link: {{Link}}
+            -----------------
+            {{/each}}  
+        {{/with}}  
+
+        {{query}}
+
+        Include citations to the relevant information where it is referenced in the response.
+        """;
+
+    do
+    {
+        Console.WriteLine("Enter a query or type 'exit' to quit:");
+        var input = Console.ReadLine();
+        if (input == "exit")
+        {
+            break;
+        }
+        //コンソールに入力された文字列でプロンプトを実行
+        var result = await kernel.InvokePromptAsync(
+            promptTemplate,
+            new KernelArguments() { { "query", input } },
+            templateFormat: HandlebarsPromptTemplateFactory.HandlebarsTemplateFormat,
+            promptTemplateFactory: promptTemplateFactory);
+
+        Console.WriteLine(result);
+
+    } while (true);
+}
 ```
 
-3. Semantic Kernelの構築
+#### Semantic Kernelの構築
+テキスト検索用にカスタマイズしたSemantic Kernelの構築の実装は下記の通りです。詳細はコード内のコメントをご確認ください。
+
 
 ```csharp
-private static Kernel InitializeSemanticKernel(AppSettings settings, AzureOpenAIClient openAiClient)
+// テキスト検索用にカスタマイズしたSemantic Kernelの構築
+private static Kernel CreateTextSearchKernel(AppSettings settings)
 {
-#pragma warning disable SKEXP0001, SKEXP0010
+#pragma warning disable SKEXP0001, SKEXP0010 //Experimental(実験段階)であることの警告を非表示
+
+    // Azure OpenAIクライアントのインスタンスを生成
+    var openAiClient = new AzureOpenAIClient(
+        new Uri(settings.AzureOpenAIEndpoint),
+        new AzureKeyCredential(settings.AzureOpenAIKey));
 
     //ChatCompletionのデプロイ(gpt-4o-mini)を紐づけし、Semantic Kernelのインスタンスを生成
     var kernelBuilder = Kernel.CreateBuilder()
         .AddAzureOpenAIChatCompletion(settings.ChatDeployment, openAiClient);
     var kernel = kernelBuilder.Build();
 
-    //AI Searchのベクトルストアへのアクセスするためのオブジェクトを生成
+    // Azure AI Searchのベクトルストアのインスタンスを生成
     var vectorStore = new AzureAISearchVectorStore(
         new SearchIndexClient(
             new Uri(settings.AzureSearchEndpoint),
             new AzureKeyCredential(settings.AzureSearchKey)));
 
-    //ベクトルストアからコレクションを取得
-    var collection = vectorStore.GetCollection<string, Ramen>(settings.VectorStoreName);
+    // ベクトルストアからコレクションを取得
+    var collection = vectorStore.GetCollection<string, Ramen>(settings.VectorStoreIndexName);
 
-    //テキスト埋め込み生成サービスの作成
-    var embeddingGenarationService = new AzureOpenAITextEmbeddingGenerationService(settings.EmbeddingDeployment, openAiClient);
+    //テキスト埋め込み生成サービスのインスタンスを生成
+    var embeddingGenarationService 
+        = new AzureOpenAITextEmbeddingGenerationService(settings.EmbeddingDeployment, openAiClient);
 
     //VectorStoreTextSearch オブジェクトの生成
     var textSearch = new VectorStoreTextSearch<Ramen>(
         collection,
         embeddingGenarationService,
         null,
-        new RamenTextSearchResultMapper());
+        new RamenTextSearchResultMapper(settings.ServiceUrl));
 
+    //VectorStoreTextSearchオブジェクトからファンクション`GetTextSearchResult` を生成
+    //そのファンクションを実行するカーネルプラグインを作成
     var searchPlugin = KernelPluginFactory.CreateFromFunctions(
         "SearchPlugin", "ramen search",
         [textSearch.CreateGetTextSearchResults(searchOptions: new TextSearchOptions() { Top = 10 })]);
 
+    //プラグインをカーネルに追加
     kernel.Plugins.Add(searchPlugin);
     return kernel;
 
 #pragma warning restore SKEXP0001, SKEXP0010
 }
+```
+
+## 6. 実行結果
+それでは実行してみましょう。ちゃんと登録したデータの中から、リクエストの内容に沿った回答を返してくれていますね！
+
+```
+Enter a query or type 'exit' to quit:
+つけ麵のおいしいお店をおしえてください
+おいしいつけ麺のお店は以下の3軒がおすすめです：
+
+1. **つけ麺大王 中野店**
+   - **スタイル**: つけ麺系
+   - **レビュー**: 評判の良いつけ麺で、看板猫がかわいいです。
+   - **おすすめメニュー**: 特製つけ麺
+   - **キーワード**: 濃厚なつけだれ
+   - [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/61)
+
+2. **つけ麺専門店 麺道場**
+   - **スタイル**: つけ麺系
+   - **レビュー**: 評判の良いつけ麺です。
+   - **おすすめメニュー**: 特製つけ麺
+   - **キーワード**: 濃厚なつけだれ
+   - [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/52)
+
+3. **つけ麺屋 やすべえ 中野店**
+   - **スタイル**: つけ麺系
+   - **レビュー**: ボリューム満点で、美味しいつけ麺が楽しめます。
+   - **おすすめメニュー**: 特製つけ麺
+   - **キーワード**: 濃厚、つけだれ
+   - [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/44)
+
+これらのお店はそれぞれの魅力があり、特製つけ麺はどのお店でもおすすめです。ぜひ訪れてみてください！
+
+Enter a query or type 'exit' to quit:
+こってりしたラーメンが食べたいです
+こってりしたラーメンをお求めでしたら、以下の選択肢があります：
+
+1. **背脂醤油ラーメン まつもと**
+   - **スタイル**: 背脂系
+   - **レビュー**: 背脂たっぷり
+   - **おすすめメニュー**: 背脂醤油ラーメン
+   - **キーワード**: こってり、ガッツリ
+   [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/55)
+
+2. **麺処 井の庄 中野店**
+   - **スタイル**: 濃厚魚介豚骨系
+   - **レビュー**: 濃厚なスープが人気
+   - **おすすめメニュー**: 井の庄ラーメン
+   - **キーワード**: こってり、満足感
+   [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/45)
+
+これらのラーメンは、こってりとした味わいを楽しめるものとなっていますので、ぜひ試してみてください。
 ```
