@@ -78,7 +78,7 @@ WHERE           (SiteId = 2)
 |UpdatedTime|更新日時|UpdatedTime|
 
 > [!Note]
-> ConvinedFieldには各カラムの値を文字列結合した値を格納しておきます。このカラムはベクトル化列として利用します。
+> CombinedFieldには各カラムの値を文字列結合した値を格納しておきます。このカラムはベクトル化列として利用します。
  
 ## 3. Azureサービスの準備
 ### Azure AI Searchのリソースを作成する
