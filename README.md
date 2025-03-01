@@ -1,4 +1,4 @@
-﻿# Azure OpenAIとAzure AI Searchを利用したSemantic Kernelテキスト検索(RAGパターン)の実装
+﻿# Azure AI Searchを利用したSemantic Kernelテキスト検索(RAG)の実装
 
 ## 1. はじめに
 
@@ -169,13 +169,16 @@ EXEC sp_addrolemember 'db_datareader', [ramen-search];
 ![alt text](/img/image-4.png)
 
 > [!Warning]
-> #### 変更の追跡と高ウォーターマークポリシーの高基準値列について
-> [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer) には下記のような記載があります。
-> 
-> 高ウォーターマーク変更検出ポリシーは、行が最後に更新されたときのバージョンまたは時刻を取得する、テーブルまたはビューの "高基準" 列に依存します。 
-> ビューを使う場合は、高ウォーターマークポリシーを使用する必要があります。 
+> [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer) を見ると下記のような説明があります。
+>> - SQL 統合変更追跡ポリシー: 
+>>   - データベース自体の持つ変更追跡ポリシーが使えるため、可能であればこちらを利用する
+>>   - ただし、ビューを使う場合は利用できない
+>> - 高ウォーターマーク変更ポリシー:
+>>   - 行が最後に更新されたときのバージョンまたは時刻を取得する、テーブルまたはビューの "高基準列"に依存
+>>   - 高基準列にはrowversion列を指定することを強く推奨
+>>   - rowversion列以外を指定した場合、全ての変更を補足できない可能性がある
 >
-> 今回はビューを利用するため、高ウォーターマーク変更ポリシーのみが利用可能となります。高基準値列にはUpdatedTimeを指定しましたが、rowversion列を指定することを強く推奨するとの事です。
+> 今回の例の様にビューを利用し、かつrorversion列が指定できないケースでは変更の追跡を利用せずに、APIを利用して追加・更新・削除のタイミングでインデックスを更新するなど、別のアプローチを検討した方が良いかもしれません。
 
 - テキストをベクトル化する
   - ベクトル化する列: CombindField
@@ -471,3 +474,6 @@ Enter a query or type 'exit' to quit:
 
 これらのラーメンは、こってりとした味わいを楽しめるものとなっていますので、ぜひ試してみてください。
 ```
+
+
+
