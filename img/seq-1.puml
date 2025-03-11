@@ -1,0 +1,43 @@
+@startuml
+actor User
+User -> Pleasanter : レコード作成
+activate Pleasanter
+Pleasanter -> Pleasanter: サーバスクリプト
+activate Pleasanter
+Pleasanter -> "Azure Open AI" : レコード情報のベクトル化（Embedding）
+activate "Azure Open AI"
+Pleasanter <- "Azure Open AI" : ベクトルデータ
+deactivate "Azure Open AI"
+Pleasanter -> "Azure AI Search" : インデックス登録
+activate "Azure AI Search"
+Pleasanter <- "Azure AI Search"
+deactivate "Azure AI Search"
+deactivate Pleasanter
+deactivate Pleasanter
+
+User -> Pleasanter : レコード更新
+activate Pleasanter
+Pleasanter -> Pleasanter: サーバスクリプト
+activate Pleasanter
+Pleasanter -> "Azure Open AI" : レコード情報のベクトル化（Embedding）
+activate "Azure Open AI"
+Pleasanter <- "Azure Open AI" : ベクトルデータ
+deactivate "Azure Open AI"
+Pleasanter -> "Azure AI Search" : インデックス更新
+activate "Azure AI Search"
+Pleasanter <- "Azure AI Search"
+deactivate "Azure AI Search"
+deactivate Pleasanter
+deactivate Pleasanter
+
+User -> Pleasanter : レコード削除
+activate Pleasanter
+Pleasanter -> Pleasanter: サーバスクリプト
+activate Pleasanter
+Pleasanter -> "Azure AI Search" : インデックス削除
+activate "Azure AI Search"
+Pleasanter <- "Azure AI Search"
+deactivate "Azure AI Search"
+deactivate Pleasanter
+deactivate Pleasanter
+@enduml

@@ -25,190 +25,298 @@
 ### Consoleアプリ & Semantic Kernel
 このサンプルでは、図の「App UX」と「App Server,Orchestrator」の部分を.NETコンソールアプリケーション(C#)で代用します。コードはSemantic Kernelのクラスライブラリを利用して実装します。
 
-### データソースはプリザンターのDB（SQL Database）
-データソースには、[プリザンター](https://pleasanter.org/)に登録されたデータを利用します。
+### データソースはプリザンターに登録されたレコード
+プリザンターに登録されたレコードの情報をインデックス化してAzure AI Searchに登録します。
 
-- プリザンターはAzure AppService及びAzure SQL Databaseを利用したサーバーレス構成でインストールされているものとします。
-  - 参考: [インストーラでプリザンターをAzure AppServiceにサーバレス構成でインストールする](https://pleasanter.org/ja/manual/getting-started-installer-pleasanter-azure)
+#### サンプルデータ
+今回は、架空のラーメン店の情報を記載したCSVファイルのデータをプリザンターに登録して利用します。
 
+- [ramen-db.csv](/ramen-db.csv)
 
-## 2. 取りこむデータの準備
-### サンプルデータ
-サンプルデータとして下記のデータをプリザンターにインポートしておきます。
+#### プリザンターのテーブル
+プリザンターにサンプル用のテーブルを用意しておきます。
 
-- [ramen-db.csv](/ramen-db.csv)  
-  (中野にあるラーメン屋のデータベースを想定した架空のデータをCopilotに作ってもらいました。実在する店舗名もありますが、あくまで架空のデータとなります)
+- テーブルの種類: 記録テーブル
+- カラムの設定：
 
-### Viewを作成する
-プリザンターの特定のテーブルからデータを取得するためのViewを作成します。
-以下のSQLを使って、dbo.Resultsテーブルから必要なデータを取得し、各カラムに適切な名前を付けたViewを作成します。
+  |カラム名|プリザンターの項目|インデックスのフィールド名※|値の例|
+  |--|--|--|--|
+  |店名|Title|StoreName|麺屋昇天|
+  |口コミ|Body|Reviews|「濃厚なスープと太麺が完璧に絡む。ほうれん草のトッピングが絶妙でおすすめ。」|
+  |所在地|ClassA|Location|東京都瑞穂町箱根ケ崎51-51-51|
+  |系統|ClassB|Style|家系|
+  |おすすめメニュー|ClassC|RecomendedMenu|スペシャル豚骨ラーメン|
+  |その他キーワード|ClassD|Keyword|濃厚/海苔/太麺|
+  ※ インデックスのフィールド名は、Azure AI Searchでインデックスを定義する際に使用するフィールド名です。
 
-今回は、「SiteId」で絞ることでプリザンターに登録されている全データから今回のサンプルデータのみをインデックス化するようにしています。
+## 2. Azureリソースの作成と設定
 
-```sql
-CREATE VIEW dbo.ramen
-AS
-SELECT
-	ResultId AS ID
-	, Title AS StoreName
-	, Body AS Reviews
-	, ClassA AS Location
-	, ClassB AS Style
-	, ClassC AS RecommendedMenu
-	, ClassD AS Keyword
-	, Title + ' ' + Body + ' ' + ClassA + ' ' + ClassB + ' ' + ClassC + ' ' + ClassD AS CombinedField
-	, UpdatedTime
-FROM            dbo.Results
-WHERE           (SiteId = 2)
+### 2.1 Azure OpenAIのリソースを作成する
 
-```
+#### リソースの作成  
+Azure Portalで "Azure OpenAI" を検索し、リソースを作成します。
+1. リソース名: open-ai-0227 (名前は１例です。任意の名前を付けてください)
+2. 価格レベル: Standard(S0)
+3. リージョン: Japan East
 
-#### カラムの対応表
-  
-|テーブルのカラム名|表示名|Viewのカラム名|
-|-|-|-|
-|ResultId|ID|ID|
-|Title|店舗名|StoreName|
-|Body|口コミ|Reviews|
-|ClassA|所在地|Location|
-|ClassB|系統|Style|
-|ClassC|おすすめメニュー|RecommendedMenu|
-|ClassD|その他キーワード|Keyword|
-|*|-|CombinedField|
-|UpdatedTime|更新日時|UpdatedTime|
+#### モデルのデプロイ  
+次の手順に従いモデルをデプロイします。
+1. [Azure AI Foundry](https://ai.azure.com/) ポータルにサインインします。
+2. 使用するサブスクリプションと Azure OpenAI リソースが選択されていることを確認します。
+3. 左側メニューで「共有リソース」-「デプロイ」を選択します。
+4. 「モデルのデプロイ」ボタンから「基本モデルをデプロイする」を選択します。
+5. モデルの一覧から対象のモデルを選択肢して「確認」で内容を確認したら「リソースを作成してデプロイ」をクリックします。
 
-> [!Note]
-> CombinedFieldには各カラムの値を文字列結合した値を格納しておきます。このカラムはベクトル化列として利用します。
- 
-## 3. Azureサービスの準備
-### Azure AI Searchのリソースを作成する
+今回は下記の２つのモデルを使用します。
 
-1. Azure Portalで "Azure AI Search" を検索し、リソースを作成します。価格レベルは評価のためFreeとしておきます。
-   - リソース名: ramen-search
-   - 価格レベル: Free
-   - リージョン: Japan East
-
-2. マネージドIDを有効にする
-   作成したリソースに移動し、左側のメニューで"ID"を選んで「システム割り当て済み」の状態をONにしておきます
-
-### Azure OpenAIのリソースを作成する
-1. Azure Portalで "Azure OpenAI" を検索し、リソースを作成します。リージョンによって利用できないLLMがありますので必要に応じて選択してください。
-   - リソース名: open-ai-searvice
-   - 価格レベル: Standard(S0)
-   - リージョン: Japan East
-
-2. アクセス制御でAzure AI Searchのロールを割り当てる
-   - 作成したリソースに移動し、左側のメニューで"アクセス制御(IAM)"を選びます
-   - 「ロールの割り当ての追加」ボタンをクリック
-   - ロールに「Cognitive Services OpenAI User」を選択
-   - アクセスの割当先に「マネージドID」を選択
-   - メンバーの追加でAI Search（ramen-search）のマネージドIDを選択
-
-3. ネットワークセキュリティの構成
-   必要に応じてネットワークセキュリティの構成を行います。  
-   参考: [Azure OpenAI Service リソースを作成してデプロイする: Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/ai-services/openai/how-to/create-resource?pivots=web-portal)
-
-4. モデルをデプロイする  
-   モデルをデプロイするには、次の手順に従います。
-   
-   - [Azure AI Foundry](https://ai.azure.com/) ポータルにサインインします。
-   - 使用するサブスクリプションと Azure OpenAI リソースが選択されていることを確認します。
-   - 左側メニューで「共有リソース」-「デプロイ」を選択します。
-   - 「モデルのデプロイ」ボタンから「基本モデルをデプロイする」を選択します。
-   - モデルの一覧から対象のモデルを選択肢して「確認」で内容を確認したら「リソースを作成してデプロイ」をクリックします。
-  
-   今回は下記の２つのモデルを使用します。
-   |モデル名|用途|
-   |-|-|
-   |gpt-4o-mini|チャット補完|
-   |text-embedding-ada-002|埋め込みモデル。データのベクトル化|
+|モデル名|用途|
+|-|-|
+|gpt-4o-mini|チャット補完|
+|text-embedding-ada-002|埋め込みモデル。データのベクトル化|
 
 ![deploy model](/img/image-2.png)
 
+### 2.2 Azure AI Searchのリソースを作成する
 
-## 4. Azure AI Searchにデータをインポートする
+#### リソースの作成
+Azure Portalで "Azure AI Search" を検索し、リソースを作成します。価格レベルは評価のためFreeとしておきます。
+- リソース名: ramen-search-0227 (名前は一例です。任意の名前を付けてください)
+- 価格レベル: Free
+- リージョン: Japan East
 
-下記ドキュメントを参考にサンプルデータのインポートとベクター化を行います。
+#### インデックスの定義  
+Azure AI Searchに格納するインデックスを定義します。
 
-- [マネージド ID を使用して Azure SQL へのインデクサー接続を設定する : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-howto-managed-identities-sql)
-- [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer)
+1.  作成したリソースに移動し、左側のメニューで「検索管理」-「インデックス」を選択します。
+2.  右側上部の「＋インデックスの追加」ドロップダウンを開き、「インデックスの追加」を選択します。
 
-### SQL Databaseへのロール割り当て
-[マネージド ID を使用して Azure SQL へのインデクサー接続を設定する:Microsoft Learn](https://github.com/pleasanter-developer-community/azure-ai-rag-with-pleasanter)を参考にして、AI Searchのインスタンスに、データソースとなるSQL Databaseへの読み取り権限を付与します。
+![new-index](/img/image-10.png)
+  
+3. インデックス名を入力します（この例では ramen-20250301としました）。
+4. 「＋フィールドの追加」ボタンから、下図を参考に必要なフィールドを追加します。
 
-- Azure PortalでSQL Databaseサーバーのリソースに移動し、左側のメニューで"アクセス制御(IAM)"を選びます
-- 「ロールの割り当ての追加」ボタンをクリック
-- ロールに「閲覧者」を選択
-- アクセスの割当先に「マネージドID」を選択
-- メンバーの追加でAI Search（ramen-search）のマネージドIDを選択
+![index-fields](/img/image-11.png)
 
-また、Visual Studioや SQLServer Management Studio 等のツールでSQL Databaseに接続し、下記SQLでAI SearchのマネージドIDに対してデータベースへのアクセス権限を付与します。
+5. TextVectorを追加する際は「種類」で`Collection(Edm.Single)`を選択します。
+6. ベクトルプロファイルの設定画面が出てきますので、後述「ベクトルプロファイルの設定」を参考に設定を行ってください。
 
-```sql
-CREATE USER [ramen-search] FROM EXTERNAL PROVIDER;
-EXEC sp_addrolemember 'db_datareader', [ramen-search];
+![text-vector](/img/image-13.png)
+
+#### ベクトルプロファイルの設定
+ベクトルプロファイルの設定画面ではベクトルアルゴリズムとベクトル化の設定を行います。
+
+- ベクトルアルゴリズム:  
+  今回は既定値のまま変更せずに利用します。
+
+  |項目名|値|
+  |-|-|
+  |アルゴリズム名|vector-config-xxxxxx(自動で付与された名前で問題ありません)|
+  |Kind|hnsw|
+  |双方向リンク数(m)|4|
+  |efConstruction|400|
+  |efSearch|500|
+  |類似性メトリック|cosine|
+
+- ベクトル化:  
+  
+  |項目名|値|
+  |-|-|
+  |名前|vectorizer-xxxxxx(自動で付与された名前で問題ありません)|
+  |Kind|Azure OpenAI|
+  |サブスクリプション|(Azure OpenAI のリソースを作成したサブスクリプション)|
+  |Azure OpenAI Service|open-ai-0227(作成したリソースの名前)|
+  |モデル デプロイ|text-embedding-ada-002|
+  |認証の種類|APIキー|
+  
+## 3. プリザンターに登録されたデータをAzure AI Searchに登録する
+プリザンターにデータが登録されたタイミングで、Azure AI Search上にインデックスが構築されるように設定します。
+
+1. ユーザーがプリザンターでレコードを作成(または更新)します。
+2. レコードの作成（更新）後のタイミングでサーバスクリプトを実行します。
+3. サーバスクリプトでは、`HttpClient`の機能を使って下記の処理を行います。
+   - Azure OpenAIのEnbedding APIを実行し、レコードの内容をベクトルデータに変換
+   - Azure AI SearchのIndex APIを実行し、ベクトルデータとレコードの内容をインデックスとして登録
+4. レコードの削除時は、Azure AI Searchへ削除対象のレコードIDを指定して対象のインデックスを削除します。
+
+
+![upload-from-pleasanter](/img/seq-1.png)
+
+
+#### サーバスクリプトの実装
+プリザンターのサンプル用テーブルの「テーブルの管理」画面で「サーバスクリプト」タブを選択し、下記のサーバスクリプトを追加します。
+
+1. 共通スクリプト:  
+   HttpClientを使ってAPIを実行する`MyAIServiceClient`クラスを定義しています。条件を「共有」とすることで、他のサーバスクリプトが実行されるまでにこのスクリプトが実行されます。
+   - タイトル: Definitions
+   - 条件: 共有
+   - スクリプト: 
+  
+```js
+/**
+ * MyAIServiceClient クラスは、AI検索および埋め込みサービスとの通信を行うためのクライアントを提供します。
+ * 
+ * @class
+ */
+class MyAIServiceClient {
+    #aiSearchUrl = "https://{Azure AI Search Service Name}.search.windows.net/indexes('{Index Name}')/docs/search.index?api-version=2024-07-01";
+    #aiSearchKey = "{Azure AI Search API Key}";
+    #openAiUrl = "https://{Azure Open AI Service Name}.openai.azure.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2024-02-01";
+    #openAiKey = "{Azure Open AI API Key}";
+  
+    /**
+     * 指定されたURLとAPIキーでHTTPクライアントを初期化します。
+     *
+     * @param {string} url - リクエストURIとして設定するURL。
+     * @param {string} key - リクエストヘッダーに追加するAPIキー。
+     */
+    #init(url, key) {
+      httpClient.RequestHeaders.Clear();
+      httpClient.ResponseHeaders.Clear();
+      httpClient.RequestUri = url;
+      httpClient.RequestHeaders.Add('api-key', key);
+    }
+  
+    /**
+     * 指定されたデータでPOSTリクエストを送信します。
+     *
+     * @param {Object} data - POSTリクエストで送信するデータ。
+     * @param {Function} success - リクエストが成功した場合に実行されるコールバック関数。レスポンスを引数として受け取ります。
+     * @param {Function} fail - リクエストが失敗した場合に実行されるコールバック関数。ステータスコードとレスポンスを引数として受け取ります。
+     */
+    #post(data, success, fail) {
+      httpClient.Content = JSON.stringify(data);
+      let response = httpClient.Post();
+      if (httpClient.IsSuccess) {
+        success(response);
+      } else {
+        fail(httpClient.StatusCode, response);
+      }
+    }
+  
+    /**
+     * 検索URLとキーを初期化し、データを投稿してインデックスを更新します。
+     *
+     * @param {Object} data - 投稿するデータ。
+     * @param {Function} success - 投稿が成功した場合に実行されるコールバック関数。レスポンスを引数として受け取ります。
+     * @param {Function} fail - 投稿が失敗した場合に実行されるコールバック関数。ステータスコードとレスポンスを引数として受け取ります。
+     */
+    uploadIndex(data, success, fail) {
+      this.#init(this.#aiSearchUrl, this.#aiSearchKey);
+      this.#post(data, success, fail);
+    }
+  
+    /**
+     * IDでインデックスエントリを削除します。
+     *
+     * @param {number|string} id - 削除するインデックスエントリのID。
+     * @param {function} success - 削除が成功した場合に実行されるコールバック関数。レスポンスを引数として受け取ります。
+     * @param {function} fail - 削除が失敗した場合に実行されるコールバック関数。ステータスコードとレスポンスを引数として受け取ります。
+     */
+    deleteIndex(id, success, fail) {
+      this.#init(this.#aiSearchUrl, this.#aiSearchKey);
+      let data = {
+        "value": [
+          {
+            "@search.action": "delete",
+            "ID": String(id)
+          }]
+      };
+      this.#post(data, success, fail);
+    }
+  
+    /**
+     * 提供されたデータを使用して埋め込みを作成します。
+     *
+     * @param {Object} data - 埋め込みを作成するために使用するデータ。
+     * @param {Function} success - 埋め込みの作成が成功した場合に呼び出されるコールバック関数。レスポンスを引数として受け取ります。
+     * @param {Function} fail - 埋め込みの作成が失敗した場合に呼び出されるコールバック関数。ステータスコードとレスポンスを引数として受け取ります。
+     */
+    createEmbedding(data, success, fail) {
+      this.#init(this.#openAiUrl, this.#openAiKey);
+      this.#post(data, success, fail);
+    }
+  }
 ```
 
-### データのインポートとベクター化
+2. インデックス登録用スクリプト:  
+   レコードが作成または更新されたタイミングで実行されます。登録されたレコード情報をAzure AI Searchにインデックスとして登録します。インデックスにはレコードの内容をAzure OpenAI のAPIで変換したベクトルデータを含めます。
+   - タイトル: Upload Index
+   - 条件: 作成後および更新後
+   - スクリプト:  
 
-- Azure PortalでAI Searchのリソースへ移動し、「概要」画面上部の「データのインポートとベクター化」ボタンをクリックします。
-  
-![alt text](/img/image-3.png) 
+```js
+let myAIServiceClient = new MyAIServiceClient();
+//ベクトル化する文字列の設定
+//各項目の値をスペースで連結
+let input = {
+  input: `${model.Title} ${model.Title} ${model.Body} ${model.ClassA} '
+   + '${model.ClassB} ${model.ClassC} ${model.ClassD}`
+};
+//埋め込みサービスにより指定した文字列をベクトル化
+myAIServiceClient.createEmbedding(
+  input,
+  //success:
+  function (response) {
+    let obj = $ps.JSON.parse(response);
+    let vector = obj.data[0].embedding;
+    //登録するIndex情報
+    //埋め込みサービスから返却されたベクトル(実数値の配列)を取得し、
+    //TextVectorプロパティに設定する
+    let data = {
+      "value":
+        [
+          {
+            "@search.action": "upload",
+            "ID": String(model.ResultId),
+            "StoreName": model.Title,
+            "Reviews": model.Body,
+            "Location": model.ClassA,
+            "Style": model.ClassB,
+            "RecommendedMenu": model.ClassC,
+            "Keyword": model.ClassD,
+            "TextVector": vector
+          }
+        ]
+    };
+    //Indexの追加または更新を実行
+    myAIServiceClient.uploadIndex(
+      data,
+      //success:
+      function (response) {
+        logs.LogInfo(response,'MyAIServiceClient.uploadIndex');
+      },
+      //fail:
+      function (statusCode, response) {
+        logs.LogUserError(`(code: ${statusCode})${response}`, 'MyAIServiceClient.uploadIndex');
+      });
+  },
+  //fail:
+  function (statusCode, response) {
+    logs.LogUserError(`(code: ${statusCode})${response}`, 'MyAIServiceClient.createEmbedding');
+  });
+```
 
-- データへの接続
-  - Azure SQLアカウントの種類：SQLデータベース
-  - サーバー：(プリザンターのDBサーバー)
-  - データベース: (プリザンターのDB名)
-  - テーブルまたはビュー: 表示(View)
-  - 認証オプションを選択する: マネージドIDを使用して認証する（システム割り当て）
-  - ビューの名前: ramen
-  - 変更の追跡: ☑　
-    - 高ウォーターマーク変更ポリシー
-    - 高基準値列：UpdatedTime
+3. インデックス削除用スクリプト:  
+   レコードが削除されたタイミングで実行されます。レコードのIDを指定してAzure AI Searchからインデックスを削除します。
+   - タイトル: Delete Index
+   - 条件: 削除後
+   - スクリプト:
 
-![alt text](/img/image-4.png)
-
-> [!Warning]
-> [Azure SQL データベースのデータにインデックスを付ける : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/search-how-to-index-sql-database?tabs=portal-check-indexer) を見ると下記のような説明があります。
->> - SQL 統合変更追跡ポリシー: 
->>   - データベース自体の持つ変更追跡ポリシーが使えるため、可能であればこちらを利用する
->>   - ただし、ビューを使う場合は利用できない
->> - 高ウォーターマーク変更ポリシー:
->>   - 行が最後に更新されたときのバージョンまたは時刻を取得する、テーブルまたはビューの "高基準列"に依存
->>   - 高基準列にはrowversion列を指定することを強く推奨
->>   - rowversion列以外を指定した場合、全ての変更を補足できない可能性がある
->
-> 今回の例の様にビューを利用し、かつrorversion列が指定できないケースでは変更の追跡を利用せずに、APIを利用して追加・更新・削除のタイミングでインデックスを更新するなど、別のアプローチを検討した方が良いかもしれません。
-
-- テキストをベクトル化する
-  - ベクトル化する列: CombindField
-  - Kind: Azure OpenAI
-  - サブスクリプション: (Azure OpenAIを作成したサブスクリプション)
-  - Azure OpenAI Service: (作成したAzure OpenAI名)
-  - モデルデプロイ: (ベクトル化に使用するLLMモデルのデプロイ名（今回は text-embedding-ada-002）)
-  
-![alt text](/img/image-5.png)
-
-- インデックス作成のスケジュール
-  - スケジュール: インデックスを更新する頻度を選択します。（今回は動作検証に利用するだけなので「一度だけ」としておきます）
-
-![alt text](/img/image-6.png)
-
-- インデックスフィールド「プレビューと編集」をクリックして取り込み元のビューのカラムとインデックスフィールドとの対応を確認します。
-  - ベクトル化する列に指定したCombindFieldはベクトル変換後、 text_vector というフィールド名で登録されるようです。
-  - それ以外のカラムはそのまま同じ名前のインデックスフィールドに格納する設定となっています。
-
-![alt text](/img/image-9.png)
-
-- オブジェクト名のプレフィックスを任意の名前に変更してインポートを実行します。この名前はこの後「インデックス名」として利用します。
-
-![alt text](/img/image-7.png)
-
-インポートが完了すると、Azure AI Searchのリソースにインデックス作成されます。
-![alt text](/img/image-8.png)
+```js
+let myAIServiceClient = new MyAIServiceClient();
+//指定したIDのインデックスを削除
+myAIServiceClient.deleteIndex(
+  model.ResultId,
+  function (response) {
+    logs.LogInfo(response,'MyAIServiceClient.deleteIndex');
+  },
+  function (statusCode, response) {
+    context.LogUserError(`(code: ${statusCode})${response}`, 'MyAIServiceClient.deleteIndex');
+  });
+```
 
 
-## 5. セマンティックカーネルによるベクターストアを使用したテキスト検索の実装
+## 4. セマンティックカーネルによるベクターストアを使用したテキスト検索の実装
 ここからはAIサービスを利用したクライアント側の実装例を見ていきます。
 サンプルでは下記のドキュメントを参考にセマンティックカーネルによるテキスト検索（RAG）の実装を行っています。
 
@@ -259,7 +367,7 @@ EXEC sp_addrolemember 'db_datareader', [ramen-search];
 public class Ramen
 {
     [VectorStoreRecordVector]
-    public ReadOnlyMemory<float> text_vector { get; init; }
+    public ReadOnlyMemory<float> TextVector { get; init; }
         
     [VectorStoreRecordKey]
     public required string ID { get; init; }
@@ -334,6 +442,12 @@ static async Task Main()
     //- <Plugin名>-<Function名> でカーネルプラグインのファンクションを呼び出し
     //- 結果を {{#each this}} で反復処理
     var promptTemplate = """
+        # 下記のルールに従って回答してください
+        - `問合せ内容`に対して、適切な回答を提示してください
+        - `検索結果`の内容を参照して回答を作成してください
+        - 回答の最後に`検索結果`に含まれるリンク情報を追加してください
+
+        # 検索結果
         {{#with (SearchPlugin-GetTextSearchResults query)}}  
             {{#each this}}  
             Name: {{Name}}
@@ -343,9 +457,8 @@ static async Task Main()
             {{/each}}  
         {{/with}}  
 
+        # 問合せ内容
         {{query}}
-
-        Include citations to the relevant information where it is referenced in the response.
         """;
 
     do

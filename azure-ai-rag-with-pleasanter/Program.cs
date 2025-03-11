@@ -20,6 +20,12 @@ static class Program
         var kernel = CreateTextSearchKernel(settings);
         var promptTemplateFactory = new HandlebarsPromptTemplateFactory();
         var promptTemplate = """
+            # 下記のルールに従って回答してください
+            - `問合せ内容`に対して、適切な回答を提示してください
+            - `検索結果`の内容を参照して回答を作成してください
+            - 回答の最後に`検索結果`に含まれるリンク情報を追加してください
+
+            # 検索結果
             {{#with (SearchPlugin-GetTextSearchResults query)}}  
                 {{#each this}}  
                 Name: {{Name}}
@@ -29,16 +35,16 @@ static class Program
                 {{/each}}  
             {{/with}}  
 
+            # 問合せ内容
             {{query}}
-
-            Include citations to the relevant information where it is referenced in the response.
             """;
 
         do
         {
-            Console.WriteLine("Enter a query or type 'exit' to quit:");
+            Console.WriteLine("ラーメン情報を検索します。お好みのラーメンは何ですか？ (終了する場合は'x'を入力)");
+            Console.Write("> ");
             var input = Console.ReadLine();
-            if (input == "exit")
+            if (input == "x")
             {
                 break;
             }

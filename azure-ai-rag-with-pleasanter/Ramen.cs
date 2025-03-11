@@ -7,7 +7,7 @@ public class Ramen
 
     // Collection of float values representing text vector
     [VectorStoreRecordVector]
-    public ReadOnlyMemory<float> text_vector { get; init; }
+    public ReadOnlyMemory<float> TextVector { get; init; }
 
     // ID field
     [VectorStoreRecordKey]
