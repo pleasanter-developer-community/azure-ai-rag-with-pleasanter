@@ -45,9 +45,11 @@
   |口コミ|Body|Reviews|「濃厚なスープと太麺が完璧に絡む。ほうれん草のトッピングが絶妙でおすすめ。」|
   |所在地|ClassA|Location|東京都瑞穂町箱根ケ崎51-51-51|
   |系統|ClassB|Style|家系|
-  |おすすめメニュー|ClassC|RecomendedMenu|スペシャル豚骨ラーメン|
+  |おすすめメニュー|ClassC|RecommendedMenu|スペシャル豚骨ラーメン|
   |その他キーワード|ClassD|Keyword|濃厚/海苔/太麺|
   ※ インデックスのフィールド名は、Azure AI Searchでインデックスを定義する際に使用するフィールド名です。
+
+
 
 ## 2. Azureリソースの作成と設定
 
@@ -55,7 +57,7 @@
 
 #### リソースの作成  
 Azure Portalで "Azure OpenAI" を検索し、リソースを作成します。
-1. リソース名: open-ai-0227 (名前は１例です。任意の名前を付けてください)
+1. リソース名: open-ai-0227 (名前一例です。任意の名前を付けてください)
 2. 価格レベル: Standard(S0)
 3. リージョン: Japan East
 
@@ -95,10 +97,10 @@ Azure AI Searchに格納するインデックスを定義します。
 3. インデックス名を入力します（この例では ramen-20250301としました）。
 4. 「＋フィールドの追加」ボタンから、下図を参考に必要なフィールドを追加します。
 
-![index-fields](/img/image-11.png)
+![index-fields](/img/image-16.png)
 
-5. TextVectorを追加する際は「種類」で`Collection(Edm.Single)`を選択します。
-6. ベクトルプロファイルの設定画面が出てきますので、後述「ベクトルプロファイルの設定」を参考に設定を行ってください。
+1. TextVectorを追加する際は「種類」で`Collection(Edm.Single)`を選択します。
+2. ベクトルプロファイルの設定画面が出てきますので、後述「ベクトルプロファイルの設定」を参考に設定を行ってください。
 
 ![text-vector](/img/image-13.png)
 
@@ -146,7 +148,7 @@ Azure AI Searchに格納するインデックスを定義します。
 プリザンターのサンプル用テーブルの「テーブルの管理」画面で「サーバスクリプト」タブを選択し、下記のサーバスクリプトを追加します。
 
 1. 共通スクリプト:  
-   HttpClientを使ってAPIを実行する`MyAIServiceClient`クラスを定義しています。条件を「共有」とすることで、他のサーバスクリプトが実行されるまでにこのスクリプトが実行されます。
+   HttpClientを使ってAPIを実行する`MyAIServiceClient`クラスを定義しています。条件を「共有」とすることで、他のサーバスクリプトが実行される前にこのスクリプトが実行されます。
    - タイトル: Definitions
    - 条件: 共有
    - スクリプト: 
@@ -311,20 +313,34 @@ myAIServiceClient.deleteIndex(
     logs.LogInfo(response,'MyAIServiceClient.deleteIndex');
   },
   function (statusCode, response) {
-    context.LogUserError(`(code: ${statusCode})${response}`, 'MyAIServiceClient.deleteIndex');
+    logs.LogUserError(`(code: ${statusCode})${response}`, 'MyAIServiceClient.deleteIndex');
   });
 ```
 
+### サンプルデータのインポート
+サーバスクリプトの定義が終わったら、サンプルデータをインポート機能で取りこみます。
+
+- Azureポータルの Azure AI Searchで作成したインデックスの画面を開き、取り込み前の状態を確認します。まだドキュメントが0件となっています。
+![alt text](/img/image-14.png)
+
+- プリザンターでサンプル用テーブルの一覧画面を開き、「インポート」ボタンをクリックしてramen-db.csvをインポートします。55件のデータが登録されます。
+![alt text](/img/image-15.png)
+
+- 取り込み後、少し時間を置いてからインデックスを確認すると、ドキュメント数がレコード数と同じ55件となることが確認できます。また、テキストボックスに検索文字列を入れて「検索すると」インポートしたデータの内容が検索結果として確認できます。
+![alt text](/img/image-17.png)
+
+> [!Note]
+> 登録したデータでの検索は即時可能ですが、ドキュメント数やストレージ容量などの表示は反映されるまで数分掛かるようです。
 
 ## 4. セマンティックカーネルによるベクターストアを使用したテキスト検索の実装
 ここからはAIサービスを利用したクライアント側の実装例を見ていきます。
 サンプルでは下記のドキュメントを参考にセマンティックカーネルによるテキスト検索（RAG）の実装を行っています。
 
-> [!WARNING]
-> セマンティック カーネル テキスト検索機能はプレビュー段階であり、破壊的変更を必要とする機能強化は、リリース前の限られた状況で引き続き発生する可能性があります。
-
 - [セマンティック カーネル テキスト検索とは](https://learn.microsoft.com/ja-jp/semantic-kernel/concepts/text-search/?pivots=programming-language-csharp)
 - [セマンティック カーネル テキスト検索でベクター ストアを使用する方法](https://learn.microsoft.com/ja-jp/semantic-kernel/concepts/text-search/text-search-vector-stores?pivots=programming-language-csharp)
+
+> [!WARNING]
+> セマンティック カーネル テキスト検索機能はプレビュー段階であり、破壊的変更を必要とする機能強化は、リリース前の限られた状況で引き続き発生する可能性があります。
 
 ### 依存ライブラリ
 サンプルでは、下記のライブラリを参照しています。
@@ -463,7 +479,7 @@ static async Task Main()
 
     do
     {
-        Console.WriteLine("Enter a query or type 'exit' to quit:");
+        Console.WriteLine("ラーメン情報を検索します。お好みのラーメンは何ですか？ (終了する場合は'x'を入力)");
         var input = Console.ReadLine();
         if (input == "exit")
         {
@@ -540,52 +556,43 @@ private static Kernel CreateTextSearchKernel(AppSettings settings)
 それでは実行してみましょう。ちゃんと登録したデータの中から、リクエストの内容に沿った回答を返してくれていますね！
 
 ```
-Enter a query or type 'exit' to quit:
-つけ麵のおいしいお店をおしえてください
-おいしいつけ麺のお店は以下の3軒がおすすめです：
+ラーメン情報を検索します。お好みのラーメンは何ですか？ (終了する場合は'x'を入力)
+> 野菜たっぷりのラーメンが食べたい
+野菜たっぷりのラーメンをお探しでしたら、「らーめんはやと」がおすすめです。この店のラーメンはあっさりした?油系で、た っぷりの野菜がトッピングされており、特に女性に人気があります。おすすめのメニューは「はやぶさラーメン」です。
 
-1. **つけ麺大王 中野店**
-   - **スタイル**: つけ麺系
-   - **レビュー**: 評判の良いつけ麺で、看板猫がかわいいです。
-   - **おすすめメニュー**: 特製つけ麺
-   - **キーワード**: 濃厚なつけだれ
-   - [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/61)
+詳細はこちらからご覧いただけます: [らーめんはやと](https://my-pleasanter-xxxx.azurewebsites.net/items/62)
+ラーメン情報を検索します。お好みのラーメンは何ですか？ (終了する場合は'x'を入力)
+> つけ麺がおいしいお店を探しています
+以下のつけ麺のお店をおすすめします：
 
-2. **つけ麺専門店 麺道場**
-   - **スタイル**: つけ麺系
-   - **レビュー**: 評判の良いつけ麺です。
-   - **おすすめメニュー**: 特製つけ麺
-   - **キーワード**: 濃厚なつけだれ
-   - [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/52)
+1. **つけ麺匠**
+   - 特徴: 太麺が食べ応え抜群で、濃厚なスープがしっかり絡みます。肉のトッピングが豪華。
+   - おすすめメニュー: 濃厚魚介つけ麺
+   - リンク: [つけ麺匠](https://my-pleasanter-xxxx.azurewebsites.net/items/72)
 
-3. **つけ麺屋 やすべえ 中野店**
-   - **スタイル**: つけ麺系
-   - **レビュー**: ボリューム満点で、美味しいつけ麺が楽しめます。
-   - **おすすめメニュー**: 特製つけ麺
-   - **キーワード**: 濃厚、つけだれ
-   - [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/44)
+2. **つけ麺道場**
+   - 特徴: 濃厚なスープが麺によく絡み、分厚いチャーシューも満足度が高い一品。
+   - おすすめメニュー: 特濃魚介つけ麺
+   - リンク: [つけ麺道場](https://my-pleasanter-xxxx.azurewebsites.net/items/103)
 
-これらのお店はそれぞれの魅力があり、特製つけ麺はどのお店でもおすすめです。ぜひ訪れてみてください！
+3. **つけ麺流星**
+   - 特徴: 濃厚スープがクセになる一杯で、ボリュームのある肉のトッピングも魅力。
+   - おすすめメニュー: 特濃魚介つけ麺
+   - リンク: [つけ麺流星](https://my-pleasanter-xxxx.azurewebsites.net/items/115)
 
-Enter a query or type 'exit' to quit:
-こってりしたラーメンが食べたいです
-こってりしたラーメンをお求めでしたら、以下の選択肢があります：
+4. **つけ麺宝蔵**
+   - 特徴: 太めの麺にしっかり絡む濃厚スープで、ボリューム満点の一杯。
+   - おすすめメニュー: 魚介濃厚つけ麺
+   - リンク: [つけ麺宝蔵](https://my-pleasanter-xxxx.azurewebsites.net/items/85)
 
-1. **背脂醤油ラーメン まつもと**
-   - **スタイル**: 背脂系
-   - **レビュー**: 背脂たっぷり
-   - **おすすめメニュー**: 背脂醤油ラーメン
-   - **キーワード**: こってり、ガッツリ
-   [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/55)
+5. **つけ麺匠味**
+   - 特徴: 濃厚スープのインパクトが強く、太麺がそれにしっかり絡みます。
+   - おすすめメニュー: 魚介濃厚つけ麺
+   - リンク: [つけ麺匠味](https://my-pleasanter-xxxx.azurewebsites.net/items/91)
 
-2. **麺処 井の庄 中野店**
-   - **スタイル**: 濃厚魚介豚骨系
-   - **レビュー**: 濃厚なスープが人気
-   - **おすすめメニュー**: 井の庄ラーメン
-   - **キーワード**: こってり、満足感
-   [詳細はこちら](https://my-pleasanter-xxxx.azurewebsites.net/items/45)
-
-これらのラーメンは、こってりとした味わいを楽しめるものとなっていますので、ぜひ試してみてください。
+これらのお店はそれぞれ個性的なつけ麺を提供していますので、ぜひ試してみてください！
+ラーメン情報を検索します。お好みのラーメンは何ですか？ (終了する場合は'x'を入力)
+>
 ```
 
 
