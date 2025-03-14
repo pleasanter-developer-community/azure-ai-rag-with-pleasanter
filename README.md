@@ -1,5 +1,11 @@
 ﻿# Azure AI Searchを利用したSemantic Kernelテキスト検索(RAG)の実装
 
+> [!Note]
+> このサンプルではSQL Databaseから直接データをインポートしてインデックスを生成する方法を紹介しています。
+> もう一つのアプローチとして、Azure AI SearchのAPIを使い、レコードの作成・更新・削除のタイミングでレコード単位にインデックスを作成する方法もあります。
+> 詳しくは下記ブランチを参照ください。
+> https://github.com/pleasanter-developer-community/azure-ai-rag-with-pleasanter/tree/feature/api-upload-index
+
 ## 1. はじめに
 
 ここでは、[Azure AI Search での取得拡張生成 (RAG) : Microsoft Learn](https://learn.microsoft.com/ja-jp/azure/search/retrieval-augmented-generation-overview)に記載されている下記のパターンに倣ってシステムを構築していきます。
